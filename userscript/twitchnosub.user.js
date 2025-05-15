@@ -1,46 +1,48 @@
 // ==UserScript==
-// @name         TwitchNoSub (Chrome-v0.9.1 port)
+// @name         TwitchNoSub (Safari Compatible)
 // @namespace    https://github.com/besuper/TwitchNoSub
-// @version      0.9.1
-// @description  Watch sub-only VODs on Twitch (matches Chrome extension v0.9.1 behavior)
+// @version      1.1.1
+// @description  Watch sub only VODs on Twitch (Safari Compatible)
 // @author       besuper
+// @updateURL    https://raw.githubusercontent.com/besuper/TwitchNoSub/master/userscript/twitchnosub.user.js
+// @downloadURL  https://raw.githubusercontent.com/besuper/TwitchNoSub/master/userscript/twitchnosub.user.js
+// @icon         https://raw.githubusercontent.com/besuper/TwitchNoSub/master/assets/icons/icon.png
 // @match        *://*.twitch.tv/*
-// @run-at       document-start
+// @run-at       document-end
 // @inject-into  page
 // @grant        none
 // ==/UserScript==
-
-(function() {
+(function () {
     'use strict';
 
-    // URL of the Amazon patch (from src/chrome/app.js)
-    const patchUrl = "https://cdn.jsdelivr.net/gh/besuper/TwitchNoSub@master/src/patch_amazonworker.js";
-
-    // Synchronously fetch Twitch’s blob‐based worker script
-    function getWasmWorkerJs(twitchBlobUrl) {
-        const req = new XMLHttpRequest();
-        req.open('GET', twitchBlobUrl, false);
-        req.overrideMimeType("text/javascript");
-        req.send();
-        return req.responseText;
+    async function getWasmWorkerJs(twitchBlobUrl) {
+        try {
+            const response = await fetch(twitchBlobUrl);
+            if (!response.ok) {
+                console.error('Failed to fetch worker script:', response.statusText);
+                return '';
+            }
+            return await response.text();
+        } catch (error) {
+            console.error('Error fetching worker script:', error);
+            return '';
+        }
     }
 
-    // Monkey‐patch window.Worker so it first loads our patch, then Twitch’s original worker
-    const OriginalWorker = window.Worker;
-    window.Worker = class Worker extends OriginalWorker {
+    const oldWorker = window.Worker;
+
+    window.Worker = class Worker extends oldWorker {
         constructor(twitchBlobUrl) {
-            // Grab Twitch’s worker code
-            const workerString = getWasmWorkerJs(
-                `${twitchBlobUrl.replaceAll("'", "%27")}`
-            );
-
-            // Build a new Blob that imports our patch before running Twitch’s code
-            const blob = new Blob([`
-                importScripts('${patchUrl}');
-                ${workerString}
-            `], { type: 'application/javascript' });
-
-            super(URL.createObjectURL(blob));
+            (async () => {
+                const workerString = await getWasmWorkerJs(twitchBlobUrl.replaceAll("'", "%27"));
+                const blobUrl = URL.createObjectURL(new Blob([`
+                    importScripts(
+                        'https://cdn.jsdelivr.net/gh/besuper/TwitchNoSub@master/src/patch_amazonworker.js'
+                    );
+                    ${workerString}
+                `], { type: 'application/javascript' }));
+                super(blobUrl);
+            })();
         }
-    };
+    }
 })();
